@@ -43,9 +43,7 @@ func NewChannelPool(initialCap, maxCap int, factory Factory) (Pool, error) {
 }
 
 func (c *channelPool) wrapConn(conn net.Conn) net.Conn {
-	p := &PoolConn{Conn: conn}
-	p.CreateTime = time.Now() // 记录创建时间
-	return p
+	return conn
 }
 
 func (c *channelPool) Get() (net.Conn, error) {

@@ -5,28 +5,23 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
-// channelPool 实现Pool接口 并且带有缓冲的连接池.
+// channelPool 实现Pool接口并且带有缓冲的连接池
 type channelPool struct {
-	//mu 为了保证每个连接获取是协成安全的
-	mu sync.Mutex
-	//连接的缓存
-	conns chan net.Conn
-
-	// 创建新连接的工厂方法
+	mu      sync.Mutex
+	conns   chan net.Conn
 	factory Factory
 }
 
 // Factory 获取创建一个连接
 type Factory func() (net.Conn, error)
 
+// NewChannelPool 创建一个新的连接池
 func NewChannelPool(initialCap, maxCap int, factory Factory) (Pool, error) {
-
 	if initialCap < 0 || maxCap <= 0 || initialCap > maxCap {
-
 		return nil, errors.New("invalid capacity settings")
-
 	}
 
 	c := &channelPool{
@@ -40,73 +35,49 @@ func NewChannelPool(initialCap, maxCap int, factory Factory) (Pool, error) {
 			c.Close()
 			return nil, fmt.Errorf("factory is not able to fill the pool: %s", err)
 		}
-		c.conns <- conn
+		pconn := PoolConn{Conn: conn, CreateTime: time.Now(), c: c}
+		c.conns <- &pconn
 	}
 
 	return c, nil
 }
 
-func (c *channelPool) getConns() chan net.Conn {
-
-	c.mu.Lock()
-
-	conns := c.conns
-
-	c.mu.Unlock()
-
-	return conns
-}
-
 func (c *channelPool) wrapConn(conn net.Conn) net.Conn {
-	p := &PoolConn{c: c}
-	p.Conn = conn
+	p := &PoolConn{Conn: conn}
+	p.CreateTime = time.Now() // 记录创建时间
 	return p
 }
 
 func (c *channelPool) Get() (net.Conn, error) {
-	conns := c.getConns()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	if conns == nil {
-
+	if c.conns == nil {
 		return nil, ErrClosed
-
 	}
 
 	select {
-
-	case conn := <-conns:
-
+	case conn := <-c.conns:
 		if conn == nil {
-
 			return nil, ErrClosed
-
 		}
-
 		return c.wrapConn(conn), nil
-
 	default:
-
 		conn, err := c.factory()
-
 		if err != nil {
-
 			return nil, err
-
 		}
-
-		return c.wrapConn(conn), nil
+		pconn := PoolConn{Conn: conn, CreateTime: time.Now(), c: c}
+		return c.wrapConn(&pconn), nil
 	}
 }
+
 func (c *channelPool) put(conn net.Conn) error {
-
 	if conn == nil {
-
 		return errors.New("connection is nil. rejecting")
-
 	}
 
 	c.mu.Lock()
-
 	defer c.mu.Unlock()
 
 	if c.conns == nil {
@@ -114,15 +85,10 @@ func (c *channelPool) put(conn net.Conn) error {
 	}
 
 	select {
-
 	case c.conns <- conn:
-
 		return nil
-
 	default:
-
 		return conn.Close()
-
 	}
 }
 

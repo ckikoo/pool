@@ -1,11 +1,15 @@
 package tcpPool
 
-import "net"
+import (
+	"net"
+	"time"
+)
 
 type PoolConn struct {
 	net.Conn
-	c        *channelPool
-	unusable bool
+	c          *channelPool
+	unusable   bool
+	CreateTime time.Time
 }
 
 func (p *PoolConn) Close() error {

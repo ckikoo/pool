@@ -109,5 +109,5 @@ func (c *channelPool) Close() {
 }
 
 func (c *channelPool) Len() int {
-	return len(c.getConns())
+	return len(c.conns)
 }
